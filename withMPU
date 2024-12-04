@@ -1,0 +1,118 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <MPU6050.h>  // Include MPU6050 library
+
+// Motor driver pins
+int motorPin1 = 4;
+int motorPin2 = 5;
+int enablePin = 9;
+
+// Encoder pins
+int encoderPinA = 2;
+int encoderPinB = 3;
+
+// LCD initialization
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// MPU6050 initialization
+MPU6050 mpu;
+int16_t ax, ay, az;  // Accelerometer readings
+int16_t gx, gy, gz;  // Gyroscope readings
+
+volatile int encoderPos = 0;
+int lastEncoded = 0;
+bool motorRunning = true;
+
+void setup() {
+  pinMode(motorPin1, OUTPUT);
+  pinMode(motorPin2, OUTPUT);
+  pinMode(enablePin, OUTPUT);
+
+  pinMode(encoderPinA, INPUT);
+  pinMode(encoderPinB, INPUT);
+
+  attachInterrupt(digitalPinToInterrupt(encoderPinA), updateEncoder, CHANGE);
+
+  Serial.begin(9600);
+
+  Wire.begin();  // Start I2C communication
+  mpu.initialize();  // Initialize MPU6050
+
+  if (!mpu.testConnection()) {
+    Serial.println("MPU6050 connection failed!");
+    while (1);
+  }
+
+  digitalWrite(enablePin, HIGH);
+
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
+  delay(1000);
+  lcd.clear();
+}
+
+void loop() {
+  // Read MPU6050 accelerometer data
+  mpu.getAcceleration(&ax, &ay, &az);
+
+  int motorSpeed = abs(ax / 100);  // Scale accelerometer reading for motor speed
+
+  String direction = "Stopped"; // Default direction
+
+  if (motorRunning) {
+    if (ax > 500) {  // Forward
+      direction = "Forward";
+      digitalWrite(motorPin1, HIGH);
+      digitalWrite(motorPin2, LOW);
+      analogWrite(enablePin, motorSpeed);
+    } else if (ax < -500) {  // Backward
+      direction = "Backward";
+      digitalWrite(motorPin1, LOW);
+      digitalWrite(motorPin2, HIGH);
+      analogWrite(enablePin, motorSpeed);
+    } else {  // Stop
+      direction = "Stopped";
+      digitalWrite(motorPin1, LOW);
+      digitalWrite(motorPin2, LOW);
+      analogWrite(enablePin, 0);
+    }
+  } else {
+    digitalWrite(motorPin1, LOW);
+    digitalWrite(motorPin2, LOW);
+    analogWrite(enablePin, 0);
+  }
+
+  float angle = (encoderPos % 360) * 1.0;
+
+  // Display on LCD
+  lcd.setCursor(0, 0);
+  lcd.print("Dir: ");
+  lcd.print(direction);
+  lcd.setCursor(0, 1);
+  lcd.print("Enc: ");
+  lcd.print(encoderPos);
+  lcd.setCursor(9, 1);
+  lcd.print("Ang: ");
+  lcd.print(angle);
+
+  delay(100);
+}
+
+void updateEncoder() {
+  int MSB = digitalRead(encoderPinA);
+  int LSB = digitalRead(encoderPinB);
+
+  int encoded = (MSB << 1) | LSB;
+  int sum = (lastEncoded << 2) | encoded;
+
+  if (sum == 0b01 || sum == 0b10) {
+    encoderPos++;
+  }
+  if (sum == 0b11 || sum == 0b00) {
+    encoderPos--;
+  }
+
+  lastEncoded = encoded;
+}
