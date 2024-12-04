@@ -1,0 +1,123 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// Motor driver pins
+int motorPin1 = 4;  // IN1 pin connected to pin 4
+int motorPin2 = 5;  // IN2 pin connected to pin 5
+int enablePin = 9;  // Enable pin connected to pin 9 (to enable/disable the motor)
+
+// Encoder pins
+int encoderPinA = 2;  // Encoder A connected to pin 2
+int encoderPinB = 3;  // Encoder B connected to pin 3
+
+// Potentiometer pin
+int potPin = A0;  // Potentiometer connected to A0
+
+// LCD initialization
+LiquidCrystal_I2C lcd(0x27, 16, 2);  // LCD I2C address is usually 0x27, adjust if needed
+
+volatile int encoderPos = 0;
+int lastEncoded = 0;
+bool motorRunning = true;  // Variable to track motor state (running or stopped)
+
+void setup() {
+  pinMode(motorPin1, OUTPUT);
+  pinMode(motorPin2, OUTPUT);
+  pinMode(enablePin, OUTPUT);  // Set ENABLE pin as output
+
+  // Set encoder pins as input
+  pinMode(encoderPinA, INPUT);
+  pinMode(encoderPinB, INPUT);
+
+  // Attach interrupts for encoder reading
+  attachInterrupt(digitalPinToInterrupt(encoderPinA), updateEncoder, CHANGE);
+
+  // Start serial communication
+  Serial.begin(9600);
+
+  // Enable motor driver (set enable pin HIGH)
+  digitalWrite(enablePin, HIGH);
+
+  // Initialize LCD
+  lcd.init();       // Initialize the LCD
+  lcd.backlight();  // Turn on the backlight
+  lcd.setCursor(0, 0);
+  lcd.print("Initializing...");
+  delay(1000);
+  lcd.clear();
+}
+
+void loop() {
+  // Read potentiometer value
+  int potValue = analogRead(potPin);  // Value ranges from 0 to 1023
+  int midpoint = 512;                // Midpoint for determining direction
+
+  // If motor is running, control the motor
+  if (motorRunning) {
+    // Calculate motor speed: absolute value of potentiometer deviation from midpoint
+    int motorSpeed = abs(potValue - midpoint);  // Get the absolute value of deviation
+
+    // Control motor direction and speed based on potentiometer position
+    if (potValue > midpoint) {  // Move forward (clockwise)
+      digitalWrite(motorPin1, HIGH);  // IN1 HIGH
+      digitalWrite(motorPin2, LOW);   // IN2 LOW
+      analogWrite(enablePin, motorSpeed);  // Adjust speed using PWM on enable pin
+    } else if (potValue < midpoint) {  // Move backward (counterclockwise)
+      digitalWrite(motorPin1, LOW);   // IN1 LOW
+      digitalWrite(motorPin2, HIGH);  // IN2 HIGH
+      analogWrite(enablePin, motorSpeed);  // Adjust speed using PWM on enable pin
+    } else {  // Stop motor if potentiometer is centered (potValue == midpoint)
+      digitalWrite(motorPin1, LOW);   // IN1 LOW
+      digitalWrite(motorPin2, LOW);   // IN2 LOW
+      analogWrite(enablePin, 0);  // Stop motor by setting enable pin PWM to 0
+    }
+  } else {
+    // If motor is stopped, ensure it's fully stopped
+    digitalWrite(motorPin1, LOW);  // IN1 LOW
+    digitalWrite(motorPin2, LOW);  // IN2 LOW
+    analogWrite(enablePin, 0);     // Stop motor by disabling the enable pin
+  }
+
+  // Print encoder position, direction, and angle based on potentiometer position
+  String direction;
+  if (potValue > midpoint) {
+    direction = "Forward";
+  } else if (potValue < midpoint) {
+    direction = "Backward";
+  } else {
+    direction = "Stopped";
+  }
+
+  float angle = (encoderPos % 360) * 1.0;  // Adjust this if you have a different resolution for the encoder
+
+  // Display on LCD
+  lcd.setCursor(0, 0);
+  lcd.print("Dir: ");
+  lcd.print(direction);
+  lcd.setCursor(0, 1);
+  lcd.print("Enc:");
+  lcd.print(encoderPos);
+  lcd.print(" Ang:");
+  lcd.print(angle);
+
+  delay(100);  // Delay to make the serial output and LCD readable
+}
+
+// Function to update encoder position
+void updateEncoder() {
+  int MSB = digitalRead(encoderPinA); // Most Significant Bit
+  int LSB = digitalRead(encoderPinB); // Least Significant Bit
+
+  int encoded = (MSB << 1) | LSB;  // Combine the bits
+  int sum = (lastEncoded << 2) | encoded;  // Combine the previous and current state
+
+  // Update encoder position based on changes
+  if (sum == 0b01 || sum == 0b10) {
+    encoderPos++;  // Clockwise rotation (could be considered forward)
+  }
+  if (sum == 0b11 || sum == 0b00) {
+    encoderPos--;  // Counter-clockwise rotation (could be considered backward)
+  }
+
+  lastEncoded = encoded;  // Store the current encoder state
+}
