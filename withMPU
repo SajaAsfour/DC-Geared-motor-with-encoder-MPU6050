@@ -56,9 +56,18 @@ void setup() {
 void loop() {
   // Read MPU6050 accelerometer data
   mpu.getAcceleration(&ax, &ay, &az);
+  mpu.getRotation(&gx, &gy, &gz);  // Read Gyroscope data (for angle)
 
+  // Calculate motor speed based on accelerometer value
   int motorSpeed = abs(ax / 100);  // Scale accelerometer reading for motor speed
 
+  // Calculate angle change based on gyroscope data
+  float angleChange = gx / 131.0;  // Convert gyroscope data to angle change (adjust the scale)
+
+  // Update encoder position based on gyroscope angle change
+  encoderPos += int(angleChange);  // Update encoder position based on the angle change
+
+  // Motor direction control
   String direction = "Stopped"; // Default direction
 
   if (motorRunning) {
@@ -84,9 +93,10 @@ void loop() {
     analogWrite(enablePin, 0);
   }
 
-  float angle = (encoderPos % 360) * 1.0;
+  // Calculate angle based on encoder position
+  float angle = (encoderPos % 360) * 1.0;  // Normalize angle to 0-360 degrees
 
-  // Display on LCD
+  // Display direction, encoder position, and angle on LCD
   lcd.setCursor(0, 0);
   lcd.print("Dir: ");
   lcd.print(direction);
@@ -97,22 +107,23 @@ void loop() {
   lcd.print("Ang: ");
   lcd.print(angle);
 
-  delay(100);
+  delay(100);  // Delay to make the display readable
 }
 
+// Function to update encoder position
 void updateEncoder() {
-  int MSB = digitalRead(encoderPinA);
-  int LSB = digitalRead(encoderPinB);
+  int MSB = digitalRead(encoderPinA); // Most Significant Bit
+  int LSB = digitalRead(encoderPinB); // Least Significant Bit
 
-  int encoded = (MSB << 1) | LSB;
-  int sum = (lastEncoded << 2) | encoded;
+  int encoded = (MSB << 1) | LSB;  // Combine the bits
+  int sum = (lastEncoded << 2) | encoded;  // Combine the previous and current state
 
   if (sum == 0b01 || sum == 0b10) {
-    encoderPos++;
+    encoderPos++;  // Clockwise rotation
   }
   if (sum == 0b11 || sum == 0b00) {
-    encoderPos--;
+    encoderPos--;  // Counter-clockwise rotation
   }
 
-  lastEncoded = encoded;
+  lastEncoded = encoded;  // Store the current encoder state
 }
